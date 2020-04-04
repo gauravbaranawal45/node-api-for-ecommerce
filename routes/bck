@@ -1,0 +1,323 @@
+const router = require("express").Router();
+const fs = require('fs');
+const mongoose = require("mongoose");
+const User = mongoose.model("users");
+const Employees = mongoose.model("Employees");
+const Profile = mongoose.model("Profile");
+const Products = mongoose.model("Products");
+
+
+
+
+
+
+
+const jwt = require('jsonwebtoken');
+//const bcrypt = require('bcrypt')
+process.env.SECRET_KEY = 'secret'
+///start for user
+
+router.post("/inseruser", async (req, res) => {
+        const users = new User();
+        users.name = req.body.name;
+        users.email_number = req.body.email_number;
+        users.password = req.body.password;
+        await users.save().then(item => {
+         res.send({
+            name:users.name,
+            _id:users._id
+         });
+         })
+         .catch(err => {
+         res.status(400).send("unable to save to database");
+         });
+        
+
+});
+
+/*for login*/
+
+const varifyToken = (req,res,next) =>{
+    const bearer = req.headers["authorization"]
+    if(bearer){
+        const bearerToken = bearer.split(' ');
+        const token = bearerToken[1]
+        let data = jwt.varify(token,process.env.SECRET_KEY);
+            req.userData = data;
+            next()
+
+    }else{
+         res.sendStatus(403)
+    }
+}
+
+
+router.post("/deleteuser", varifyToken, (req, res) => {
+        console.log('gaura',req.userData);
+        res.send("delte");
+})
+
+router.post('/login', (req, res) => {
+  User.findOne({
+    email_number: req.body.email_number
+  })
+    .then(user => {
+      if (user) {
+      //   if (bcrypt.compareSync(req.body.password, user.password)) {
+      //     // Passwords match
+      //     const payload = {
+      //       _id: user._id,
+      //       name: user.name,
+      //       email_number: user.email_number
+      //     }
+      //     let token = jwt.sign(payload, process.env.SECRET_KEY, {
+      //       expiresIn: 1440
+      //     })
+      //     res.send(token)
+      //   } else {
+      //     // Passwords don't match
+      //     res.json({ error: 'User does not exist' })
+      //   }
+      // }
+      //console.log(req.body.password, user.password);
+      if (req.body.password === user.password) {
+          // Passwords match
+          const payload = {
+            _id: user._id,
+            name: user.name,
+            email_number: user.email_number
+          }
+          let token = jwt.sign(payload, process.env.SECRET_KEY, {
+            expiresIn: 1440
+          })
+          res.send(token)
+        } else {
+          // Passwords don't match
+          res.json({ error: 'User does not exist' })
+        }
+      }
+      else {
+        res.json({ error: 'User does not exist' })
+      }
+    })
+    .catch(err => {
+      res.send('error: ' + err)
+    })
+})
+
+
+
+///end for user
+
+
+
+// start for product
+router.delete("/deleteproduct/:id", async (req, res) => {
+        const product = await Products.findOneAndRemove({
+                _id: req.params.id
+        });
+        res.send(req.body);
+})
+
+router.post("/get_updateproduct", async (req, res) => {
+        console.log(req.body);
+        const product = await Products.find({_id:req.body.id});
+        res.send(product);
+
+});
+
+router.get("/getallproduct", async (req, res) => {
+        const product = await Products.find({}).sort({_id:-1});
+        res.send(product);
+
+});
+
+//for  frontend
+router.post("/getproduct", async (req, res) => {
+        const product = await Products.find({ category: req.body.cat }).limit(8);
+        res.send(product);
+});
+//for admin panel frontend
+router.post("/saveproduct", async (req, res) => {
+        let image_name = Date.now() + '_' + req.body.imgName;
+        let imgbase64 = req.body.base64img.split(',');
+        let buff = Buffer.from(imgbase64[1], 'base64');
+        fs.writeFile("./upload/" + image_name, buff, (err) => {
+                if (err) throw err;
+                //console.log('The binary data has been decoded and saved to my-file.png');
+        });
+        const product = new Products();
+        product.product_name = req.body.product_name;
+        product.price = req.body.price;
+        product.stock = req.body.stock;
+        product.discount = req.body.discount;
+        product.img = image_name;
+        product.category = req.body.category;
+        product.desc = req.body.desc;
+        await product.save();
+        res.send(product);
+});
+
+
+router.put("/updateproduct", async (req, res) => {
+        let image_name = Date.now() + '_' + req.body.imgName;
+        let imgbase64 = req.body.base64img.split(',');
+        let buff = Buffer.from(imgbase64[1], 'base64');
+        fs.writeFile("./upload/" + image_name, buff, (err) => {
+                if (err) throw err;
+                //console.log('The binary data has been decoded and saved to my-file.png');
+        });
+
+        const data = {
+                product_name : req.body.product_name,
+                price : req.body.price,
+                stock : req.body.stock,
+                discount : req.body.discount,
+                category : req.body.category,
+                desc : req.body.desc,
+                img:image_name
+        }
+
+       await Products.findByIdAndUpdate({_id: req.body.id}, data,
+                                {
+                                  new: true,
+                                  runValidators: true
+                                },(err,data) =>{
+                        if(err){
+                            res.send({data:'error'});
+                        }else{
+                            res.send({data:'success'});    
+                        }
+                });
+
+        
+});
+
+
+////end product route
+
+
+
+
+
+//employee get
+router.get("/getemployee", async (req, res) => {
+        const employee = await Employees.find({}).select({ "salry": "5000" });
+        //const employee = await Employees.find({}); 
+        res.send(employee);
+});
+
+///group by
+
+router.get("/groupby", async (req, res) => {
+        const employee = await Employees.aggregate([{
+                $group:
+                {
+                        _id: "$salry",
+                        count: { $sum: 1 },
+                        id: { $push: "$_id" }
+                }
+        }])
+        res.send(employee);
+});
+
+
+//employee insert
+router.post("/employeeSave", async (req, res) => {
+        const employee = new Employees();
+        employee.name = req.body.name;
+        employee.salry = req.body.salry;
+        employee.department = req.body.department;
+        await employee.save();
+        res.send(employee);
+
+});
+
+
+
+//fetch data from db
+router.get("/post", async (req, res) => {
+        const users = await User.find({})
+        res.send(users)
+})
+
+// insert data
+router.post("/insertdata", async (req, res) => {
+        const users = new User();
+        users.name = req.body.name;
+        users.email = req.body.name;
+        users.mobile = req.body.mobile;
+        users.password = req.body.password;
+        await users.save();
+        res.send(users);
+
+});
+
+
+router.post("/profile/:uid", async (req, res) => {
+        const profile = new Profile();
+        profile.user_id = req.params.uid;
+        profile.address = req.body.address;
+        profile.state = req.body.state;
+        profile.country = req.body.country;
+        await profile.save();
+        res.send(profile);
+
+});
+
+
+//for fetch one record
+router.get("/getoneRecord/:postId", async (req, res) => {
+        const users = await User.findOne({ _id: req.params.postId })
+        res.send(users)
+});
+
+// for update
+
+router.put("/update/:postId", async (req, res) => {
+        const users = await User.findByIdAndUpdate({
+                _id: req.params.postId
+        }, req.body, {
+                        new: true,
+                        runValidators: true
+                });
+        res.send(users)
+})
+
+
+//for delete
+
+router.delete("/delete/:postId", async (req, res) => {
+        const users = await User.findOneAndRemove({
+                _id: req.params.postId
+        });
+        res.send(users);
+})
+
+///Commentss
+
+//create a comment
+
+// router.post("/:postId/insertComment",async (req,res) =>{
+//     //find users
+//     const users = await User.findOne({_id:req.params.postId});
+//     //res.send(users);
+
+//     //create comment
+//     const comment = new Comments();
+//     comment.address = req.body.address;
+//     comment.state = req.body.state;
+//     comment.users = users._id;
+//     await comment.save();
+
+
+//     //associated post with comment 
+//     users.comment.push(comment._id);
+//     await users.save();
+//     res.send(comment);
+
+// });
+
+
+
+module.exports = router;
